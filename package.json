@@ -1,0 +1,17 @@
+{
+  "name": "url-stream-proxy",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Web dashboard that turns any URL into a live-streamed URL served from this app.",
+  "main": "server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "express": "^4.19.2"
+  }
+}

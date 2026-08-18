@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>URL Stream Proxy</title>
+<style>
+  :root {
+    --bg: #0f1117; --panel: #171a23; --line: #262b38;
+    --text: #e7e9ee; --muted: #8f97a8; --accent: #5b8cff;
+  }
+  @media (prefers-color-scheme: light) {
+    :root { --bg:#f6f7fa; --panel:#fff; --line:#e2e5ec; --text:#12141a; --muted:#5c6474; --accent:#2f6bff; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text);
+    font:15px/1.5 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }
+  .wrap { max-width: 860px; margin: 0 auto; padding: 40px 20px 80px; }
+  h1 { font-size: 24px; margin: 0 0 6px; }
+  p.sub { color: var(--muted); margin: 0 0 28px; }
+  form { display: flex; gap: 10px; flex-wrap: wrap; }
+  input[type=url] {
+    flex: 1 1 320px; padding: 12px 14px; border-radius: 10px;
+    border: 1px solid var(--line); background: var(--panel); color: var(--text); font-size: 15px;
+  }
+  input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+  button {
+    padding: 12px 18px; border-radius: 10px; border: 0; cursor: pointer;
+    background: var(--accent); color: #fff; font-size: 15px; font-weight: 600;
+  }
+  button.ghost { background: transparent; color: var(--muted); border: 1px solid var(--line); font-weight: 500; padding: 7px 12px; }
+  .err { color: #ff6b6b; margin-top: 12px; min-height: 20px; }
+  ul { list-style: none; padding: 0; margin: 28px 0 0; display: grid; gap: 12px; }
+  li { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; }
+  .target { color: var(--muted); font-size: 13px; word-break: break-all; }
+  .link { display: block; margin: 4px 0 10px; font-weight: 600; color: var(--accent);
+          text-decoration: none; word-break: break-all; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .meta { color: var(--muted); font-size: 12px; margin-left: auto; }
+  .empty { color: var(--muted); margin-top: 28px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>URL Stream Proxy</h1>
+  <p class="sub">Paste any URL. You get back a link on this server that live-streams the real site through it.</p>
+
+  <form id="f">
+    <input id="url" type="url" placeholder="https://example.com" required autocomplete="off">
+    <button type="submit">Create link</button>
+  </form>
+  <div class="err" id="err"></div>
+
+  <ul id="list"></ul>
+  <div class="empty" id="empty" hidden>No links yet.</div>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+
+async function load() {
+  const links = await (await fetch('/api/links')).json();
+  const list = $('list');
+  list.innerHTML = '';
+  $('empty').hidden = links.length > 0;
+  for (const l of links) {
+    const li = document.createElement('li');
+
+    const target = document.createElement('div');
+    target.className = 'target';
+    target.textContent = l.target;
+
+    const a = document.createElement('a');
+    a.className = 'link';
+    a.href = l.url;
+    a.target = '_blank';
+    a.rel = 'noopener';
+    a.textContent = l.url;
+
+    const row = document.createElement('div');
+    row.className = 'row';
+
+    const copy = document.createElement('button');
+    copy.className = 'ghost';
+    copy.textContent = 'Copy';
+    copy.onclick = async () => {
+      await navigator.clipboard.writeText(l.url);
+      copy.textContent = 'Copied';
+      setTimeout(() => (copy.textContent = 'Copy'), 1200);
+    };
+
+    const del = document.createElement('button');
+    del.className = 'ghost';
+    del.textContent = 'Delete';
+    del.onclick = async () => {
+      await fetch('/api/links/' + l.id, { method: 'DELETE' });
+      load();
+    };
+
+    const meta = document.createElement('span');
+    meta.className = 'meta';
+    meta.textContent = l.hits + ' request' + (l.hits === 1 ? '' : 's');
+
+    row.append(copy, del, meta);
+    li.append(target, a, row);
+    list.append(li);
+  }
+}
+
+$('f').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  $('err').textContent = '';
+  const res = await fetch('/api/links', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ url: $('url').value }),
+  });
+  const data = await res.json();
+  if (!res.ok) { $('err').textContent = data.error || 'Something went wrong'; return; }
+  $('url').value = '';
+  load();
+});
+
+load();
+setInterval(load, 10000);
+</script>
+</body>
+</html>
