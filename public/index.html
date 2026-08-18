@@ -37,6 +37,11 @@
           text-decoration: none; word-break: break-all; }
   .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
   .meta { color: var(--muted); font-size: 12px; margin-left: auto; }
+  .probe { margin-top: 10px; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--line);
+           background: rgba(127,127,127,.08); font: 12px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;
+           white-space: pre-wrap; word-break: break-word; }
+  .bad { color: #ff6b6b; }
+  .good { color: #3fbf7f; }
   .empty { color: var(--muted); margin-top: 28px; }
 </style>
 </head>
@@ -97,12 +102,47 @@ async function load() {
       load();
     };
 
+    const probeBox = document.createElement('div');
+    probeBox.className = 'probe';
+    probeBox.hidden = true;
+
+    const probe = document.createElement('button');
+    probe.className = 'ghost';
+    probe.textContent = 'Test target';
+    probe.onclick = async () => {
+      probe.disabled = true;
+      probe.textContent = 'Testing…';
+      probeBox.hidden = false;
+      probeBox.textContent = 'Requesting the target from the server…';
+      try {
+        const r = await (await fetch('/api/links/' + l.id + '/probe')).json();
+        probeBox.className = 'probe ' + (r.ok ? 'good' : 'bad');
+        probeBox.textContent = r.error
+          ? 'Could not reach the target: ' + r.error
+          : [
+              'HTTP ' + r.status + ' ' + (r.statusText || '') + '  (' + r.ms + 'ms)',
+              'content-type: ' + (r.contentType || '-'),
+              'content-length: ' + (r.contentLength || '-'),
+              'accept-ranges: ' + (r.acceptRanges || '-'),
+              r.location ? 'location: ' + r.location : null,
+              r.ok ? '' : '\nThe target itself returned this. Body preview:\n' + r.bodyPreview,
+            ].filter((x) => x !== null).join('\n');
+      } catch (e) {
+        probeBox.className = 'probe bad';
+        probeBox.textContent = 'Probe failed: ' + e.message;
+      }
+      probe.disabled = false;
+      probe.textContent = 'Test target';
+    };
+
     const meta = document.createElement('span');
     meta.className = 'meta';
-    meta.textContent = l.hits + ' request' + (l.hits === 1 ? '' : 's');
+    meta.textContent =
+      l.hits + ' request' + (l.hits === 1 ? '' : 's') +
+      (l.lastStatus !== undefined ? ' · last ' + (l.lastStatus || 'failed') : '');
 
-    row.append(copy, del, meta);
-    li.append(target, a, row);
+    row.append(copy, probe, del, meta);
+    li.append(target, a, row, probeBox);
     list.append(li);
   }
 }

@@ -42,7 +42,24 @@ No environment variables are required; Render's `PORT` is picked up automaticall
 | `POST` | `/api/links` | Create a link — body `{"url": "https://example.com"}` |
 | `DELETE` | `/api/links/:id` | Remove a link |
 | `ANY` | `/p/:id/*` | The proxied, streamed site |
+| `GET` | `/api/links/:id/probe` | Ask the server to fetch the target once and report status, headers and a body preview |
 | `GET` | `/healthz` | Health check |
+
+## Debugging a link
+
+If a proxied link shows an error, the app now tells you whose error it is:
+
+- `url-stream-proxy: no link with id …` — the link is gone from this server (deleted, or the
+  instance restarted). Create it again.
+- Anything else — it came from the target site. Every proxied response carries
+  `x-proxy-target` and `x-proxy-upstream-status` headers, and the server logs
+  `[proxy] GET <target> -> <status>` for each request.
+- The **Test target** button on each dashboard row fetches the target directly from the server
+  and shows the real status code, content type and a preview of the body.
+
+Signed/expiring media URLs (CloudFront, S3, Azure SAS, etc.) are a common cause of a plain
+`Not Found` or `403`: the signature has expired or is tied to the original viewer's IP or
+referer, so the CDN rejects the request coming from Render. Copy a fresh URL and create a new link.
 
 ## Notes
 

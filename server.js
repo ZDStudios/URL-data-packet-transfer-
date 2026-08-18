@@ -107,6 +107,44 @@ app.delete('/api/links/:id', (req, res) => {
   res.status(204).end();
 });
 
+// Diagnose a link: hit the target once and report exactly what it said.
+app.get('/api/links/:id/probe', async (req, res) => {
+  const link = links.get(req.params.id);
+  if (!link) return res.status(404).json({ error: 'Unknown link id' });
+
+  const started = Date.now();
+  try {
+    const upstream = await fetch(link.target, {
+      method: 'GET',
+      headers: {
+        'user-agent': 'Mozilla/5.0 (compatible; url-stream-proxy)',
+        accept: '*/*',
+        'accept-encoding': 'identity',
+        range: 'bytes=0-1023',
+      },
+      redirect: 'manual',
+    });
+    const preview = await upstream
+      .clone()
+      .text()
+      .then((t) => t.slice(0, 400))
+      .catch(() => '<binary body>');
+    res.json({
+      ok: upstream.status < 400,
+      status: upstream.status,
+      statusText: upstream.statusText,
+      ms: Date.now() - started,
+      contentType: upstream.headers.get('content-type'),
+      contentLength: upstream.headers.get('content-length'),
+      location: upstream.headers.get('location'),
+      acceptRanges: upstream.headers.get('accept-ranges'),
+      bodyPreview: preview,
+    });
+  } catch (err) {
+    res.json({ ok: false, status: 0, ms: Date.now() - started, error: err.message });
+  }
+});
+
 app.get('/healthz', (_req, res) => res.json({ ok: true, links: links.size }));
 
 // ---------------------------------------------------------------------------
@@ -183,7 +221,16 @@ app.all(/^\/p\/([a-f0-9]{6,32})(\/.*)?$/, async (req, res) => {
   const id = req.params[0];
   const rest = req.params[1] || '/';
   const link = links.get(id);
-  if (!link) return res.status(404).send('Unknown link. Create it on the dashboard first.');
+  if (!link) {
+    return res
+      .status(404)
+      .type('text/plain')
+      .send(
+        `url-stream-proxy: no link with id "${id}".\n` +
+          'It may have been deleted, or the server restarted (links live in memory).\n' +
+          'Create it again on the dashboard.'
+      );
+  }
 
   const base = new URL(link.target);
 
@@ -220,11 +267,27 @@ app.all(/^\/p\/([a-f0-9]{6,32})(\/.*)?$/, async (req, res) => {
       redirect: 'manual',
     });
   } catch (err) {
-    return res.status(502).send(`Upstream request failed: ${err.message}`);
+    link.lastStatus = 0;
+    link.lastError = err.message;
+    link.lastAt = new Date().toISOString();
+    saveLinks();
+    console.error(`[proxy] ${req.method} ${targetUrl} -> request failed: ${err.message}`);
+    return res
+      .status(502)
+      .type('text/plain')
+      .send(`url-stream-proxy could not reach the target.\n\nTarget: ${targetUrl}\nError: ${err.message}`);
   }
 
   link.hits += 1;
+  link.lastStatus = upstream.status;
+  link.lastContentType = upstream.headers.get('content-type') || '';
+  link.lastAt = new Date().toISOString();
   saveLinks();
+  console.log(`[proxy] ${req.method} ${targetUrl} -> ${upstream.status} ${link.lastContentType}`);
+
+  // Make it obvious whether a failure came from us or from the target site.
+  res.setHeader('x-proxy-target', targetUrl.toString());
+  res.setHeader('x-proxy-upstream-status', String(upstream.status));
 
   // Follow redirects through the proxy instead of bouncing the browser away.
   const location = upstream.headers.get('location');
